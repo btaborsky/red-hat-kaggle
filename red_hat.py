@@ -12,6 +12,8 @@ from collections import defaultdict
 
 d = defaultdict(LabelEncoder)
 
+
+
 def load_data():
 
 
@@ -38,6 +40,74 @@ def load_data():
 
 
 
+def input_target_split(events_df):
+	target = events_df["outcome"]
+	inp = events_df.drop("outcome",axis=1)
+
+	return inp, target
+
+
+
+def convert_to_one_hot(inp):
+
+
+	inp.drop(["people_id","activity_id","date","p_date"],axis=1,inplace=True)
+
+	categorical_cols = []
+	for col in inp.columns:
+		if inp.dtypes[col] in ['bool','object']:
+			categorical_cols.append(col)
+	
+
+	cat_inp = inp[categorical_cols]
+
+	
+	inp.drop(categorical_cols,axis=1,inplace=True)
+	
+	#this function transforms the categorical features to integer encodings
+	#while saving the transforms that did the work for use on the validation/test sets
+	cat_inp = cat_inp.apply(lambda x: d[x.name].fit_transform(x))
+
+	#some features have too many categories and will retain their integer values rather than
+	#getting one-hot encoded.
+
+	ordinal_cols = ["char_1","char_2","char_10","p_group_1","p_char_3","p_char_4","p_char_7"] 
+
+	inp=pd.concat([inp,cat_inp[ordinal_cols]],axis=1)
+	# print cat_inp.columns
+	cat_inp.drop(ordinal_cols,inplace=True,axis=1)
+	# print cat_inp.columns
+	# print cat_inp.apply(pd.Series.nunique).sum()
+
+
+	enc = OneHotEncoder(sparse=False)
+	enc.fit(cat_inp)
+	cat_inp = enc.transform(cat_inp)
+
+	
+
+	inp=pd.concat([inp,pd.DataFrame(cat_inp)],axis=1)
+
+	return inp
+
+
+def preprocess_inp(events_df):
+
+	inp=events_df.drop(["people_id","activity_id","date","p_date"],axis=1)
+	return inp
+
+
+
+
+# def rf_fit(target,inp):
+
+
+
+# 	inp_train,inp_valid,target_train,target_valid = train_test_split(inp,target,train_size=.8,random_state=31)
+
+# 	rf = RandomForestClassifier(random_state = 31)
+
+
 
 def visualizations(events_df):
 
@@ -62,63 +132,6 @@ def visualizations(events_df):
 	axarr[1].plot(outcome_per_date_gap.index.days,np.log(outcome_per_date_gap["outcome"]["count"]))
 	
 	plt.show()
-
-def input_target_split(events_df):
-	target = events_df["outcome"]
-	inp = events_df.drop("outcome",axis=1)
-
-
-
-
-
-def convert_to_one_hot(inp):
-
-	categorical_cols = []
-	for col in inp.columns:
-		if inp.dtypes[col] in ['bool','object']:
-			categorical_cols.append(col)
-	
-	cat_inp = inp[categorical_cols]
-
-	res = cat_inp.apply(pd.Series.nunique)
-
-	
-
-	
-	inp.drop(categorical_cols,axis=1,inplace=True)
-	
-
-	cat_inp = cat_inp.apply(lambda x: d[x.name].fit_transform(x))
-
-	enc = OneHotEncoder()
-	enc.fit(cat_inp)
-	cat_inp = enc.transform(cat_inp)
-
-	return inp, cat_inp
-
-	# inp=pd.concat([inp,cat_inp],axis=1)
-
-
-
-def preprocess_inp(events_df):
-
-	inp=events_df.drop(["people_id","activity_id","date","p_date"],axis=1)
-
-
-
-
-
-# def rf_fit(target,inp):
-
-
-
-# 	inp_train,inp_valid,target_train,target_valid = train_test_split(inp,target,train_size=.8,random_state=31)
-
-# 	rf = RandomForestClassifier(random_state = 31)
-
-
-
-
 
 
 
