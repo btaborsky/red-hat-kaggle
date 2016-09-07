@@ -9,6 +9,11 @@ from sklearn.cross_validation import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from collections import defaultdict
+from scipy.sparse import hstack
+from sklearn.metrics import log_loss
+from sklearn.grid_search import GridSearchCV
+from sklearn.metrics import make_scorer
+import time
 
 d = defaultdict(LabelEncoder)
 
@@ -33,8 +38,10 @@ def load_data():
 	events_df = pd.read_csv(event_fname,parse_dates=["date"])
 	events_df = pd.merge(events_df,people_df,on="people_id")
 	events_df["weekday"] = events_df["date"].apply(pd.tslib.Timestamp.weekday)
-	events_df["date_gap"] = events_df["date"] - events_df["p_date"]
+	events_df["date_gap"] = (events_df["date"] - events_df["p_date"]).apply(lambda x: x.days)
 	
+	events_df.fillna("type 0",inplace=True)
+
 	return events_df
 
 
@@ -50,8 +57,8 @@ def input_target_split(events_df):
 
 def convert_to_one_hot(inp):
 
-
-	inp.drop(["people_id","activity_id","date","p_date"],axis=1,inplace=True)
+	if "people_id" in inp.columns:
+		inp.drop(["people_id","activity_id","date","p_date"],axis=1,inplace=True)
 
 	categorical_cols = []
 	for col in inp.columns:
@@ -60,7 +67,6 @@ def convert_to_one_hot(inp):
 	
 
 	cat_inp = inp[categorical_cols]
-
 	
 	inp.drop(categorical_cols,axis=1,inplace=True)
 	
@@ -68,44 +74,49 @@ def convert_to_one_hot(inp):
 	#while saving the transforms that did the work for use on the validation/test sets
 	cat_inp = cat_inp.apply(lambda x: d[x.name].fit_transform(x))
 
-	#some features have too many categories and will retain their integer values rather than
-	#getting one-hot encoded.
-
-	ordinal_cols = ["char_1","char_2","char_10","p_group_1","p_char_3","p_char_4","p_char_7"] 
-
-	inp=pd.concat([inp,cat_inp[ordinal_cols]],axis=1)
-	# print cat_inp.columns
-	cat_inp.drop(ordinal_cols,inplace=True,axis=1)
-	# print cat_inp.columns
-	# print cat_inp.apply(pd.Series.nunique).sum()
-
-
-	enc = OneHotEncoder(sparse=False)
+	
+	enc = OneHotEncoder(handle_unknown="ignore")
 	enc.fit(cat_inp)
 	cat_inp = enc.transform(cat_inp)
 
-	
 
-	inp=pd.concat([inp,pd.DataFrame(cat_inp)],axis=1)
+	inp = hstack([inp,cat_inp])	
 
-	return inp
+	# inp=pd.concat([inp,pd.DataFrame(cat_inp)],axis=1)
 
-
-def preprocess_inp(events_df):
-
-	inp=events_df.drop(["people_id","activity_id","date","p_date"],axis=1)
 	return inp
 
 
 
 
-# def rf_fit(target,inp):
+def rf_fit(target,inp):
 
 
 
-# 	inp_train,inp_valid,target_train,target_valid = train_test_split(inp,target,train_size=.8,random_state=31)
+	train_inp,valid_inp,train_target,valid_target = train_test_split(inp,target,train_size=.8,random_state=31)
 
-# 	rf = RandomForestClassifier(random_state = 31)
+	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1)
+
+
+	start = time.time()
+
+	rf.fit(train_inp,train_target)
+
+	end = time.time()
+	print "fitting took {:0.4} seconds".format(end-start)
+
+	training_output = rf.predict_proba(train_inp)
+	validation_output = rf.predict_proba(valid_inp)
+
+	training_error = log_loss(train_target,training_output)
+	validation_error = log_loss(valid_target,validation_output)
+
+	print "Train error: {:02.4f}".format(training_error)
+	print "Validation error: {:02.4f}".format(validation_error)
+
+
+
+
 
 
 
