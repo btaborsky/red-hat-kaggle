@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import pandas as pd
 import pdb
 from sklearn.ensemble import RandomForestClassifier
@@ -13,6 +14,7 @@ from scipy.sparse import hstack
 from sklearn.metrics import log_loss
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import make_scorer
+
 import time
 
 d = defaultdict(LabelEncoder)
@@ -82,8 +84,6 @@ def convert_to_one_hot(inp):
 
 	inp = hstack([inp,cat_inp])	
 
-	# inp=pd.concat([inp,pd.DataFrame(cat_inp)],axis=1)
-
 	return inp
 
 
@@ -91,13 +91,9 @@ def convert_to_one_hot(inp):
 
 def rf_fit(target,inp):
 
-
-
 	train_inp,valid_inp,train_target,valid_target = train_test_split(inp,target,train_size=.8,random_state=31)
 
 	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1)
-
-
 	start = time.time()
 
 	rf.fit(train_inp,train_target)
@@ -115,8 +111,62 @@ def rf_fit(target,inp):
 	print "Validation error: {:02.4f}".format(validation_error)
 
 
+def prepare_input():
+	print "loading data"
+	events_df = load_data()
+	print "splitting input and target" 
+	inp,target = input_target_split(events_df)
+	print "converting to one hot"
+	inp = convert_to_one_hot(inp)
+	print "splitting training and validation"
+	train_inp,valid_inp,train_target,valid_target = train_test_split(inp,target,train_size=.8,random_state=31)
+	return train_inp,valid_inp,train_target,valid_target
 
 
+
+def rf_training_curve():
+	
+	train_inp,valid_inp,train_target,valid_target = prepare_input()
+
+
+	rf = RandomForestClassifier(random_state=31,n_jobs=-1)
+	
+	
+
+	generate_learning_curve(rf,train_inp,train_target,valid_inp,valid_target,1500000)
+
+	
+
+
+
+def generate_learning_curve(model,training_input,training_target,validation_input,validation_target,max_n):
+
+	
+
+	#proceed by thousands, total number of games in training set is between 12 and 13k
+	training_sizes = range(max_n/10,max_n,max_n/10)
+	
+	
+	train_error_list = []
+	validation_error_list = []
+
+	#train models with different trainset sizes and store the resulting training and validation set errors
+	for size in training_sizes:
+		(train_error,validation_error) = train_predict(model,training_input[:size],training_target[:size],validation_input,validation_target)
+		train_error_list.append(train_error)
+		validation_error_list.append(validation_error)
+	
+	#prepare pretty plot, Figure 4 in final report
+	plt.plot(training_sizes,train_error_list,"b")
+	plt.plot(training_sizes,validation_error_list,"r")
+	plt.xlabel("Training Observations")
+	plt.ylabel("Log Loss Error")
+	blue_patch = mpatches.Patch(color='blue',label="Training Error")
+	red_patch = mpatches.Patch(color='red',label="Validation Error")
+	plt.legend(handles=[blue_patch,red_patch],loc="upper right")
+	plt.title("Model Learning Curves")
+
+	plt.show()
 
 
 
@@ -147,6 +197,31 @@ def visualizations(events_df):
 
 
 
+def train_predict(clf,training_input,training_target,validation_input,validation_target): 
+	print "Training a {} using a training set of size {}".format(clf.__class__.__name__,training_input.shape[0])
 
+	train_classifier(clf,training_input,training_target)
+
+	train_error = predict_labels(clf,training_input,training_target)
+	validation_error = predict_labels(clf,validation_input,validation_target)
+
+	print "log-loss for training set: {:5.4}".format(train_error)
+	print "log-loss for validation set: {:5.4}".format(validation_error)
+	return (train_error,validation_error)
+
+def train_classifier(clf,training_input,training_target):
+	start = time.time()
+	clf.fit(training_input,training_target)
+	end = time.time()
+
+	print "Trained model in {:0.2f} seconds".format(end-start)
+
+def predict_labels(clf, features, target):
+	start = time.time()
+	pred = clf.predict_proba(features)
+	end = time.time()
+
+	print "Made predictions in {:0.4f} seconds.".format(end - start)
+	return log_loss(target,pred)
 
 
