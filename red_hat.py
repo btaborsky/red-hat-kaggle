@@ -170,6 +170,37 @@ def generate_learning_curve(model,training_input,training_target,validation_inpu
 
 
 
+def rf_grid_search():
+
+	train_inp,valid_inp,train_target,valid_target = prepare_input()
+	#set up scorer for grid search. log-loss is error, not score, so set greater_is_better to false,
+	#and log-loss requires a probability
+	log_loss_scorer = make_scorer(log_loss,greater_is_better=False,needs_proba=True)
+
+	train_inp = train_inp[:750000]
+	train_target = train_target[:750000]
+
+	start = time.time()
+	random_forest = RandomForestClassifier(random_state=31)
+	# r_forest_parameters = {'n_estimators' : [120,300,500,800,1200],'max_depth':[5,8,15,25,30,None],'max_features':['log2','sqrt',None],
+	# 'min_samples_split':[1,2,5,10,15,100],'min_samples_leaf':[1,2,5,10]}
+	
+	r_forest_parameters = {'n_estimators':[5,10,20,50],'max_depth':[3,5,15,25,30,None]}
+	#grid search too slow to not use all cores, and wayyyy too slow to have no output.
+	r_forest_grid_obj = GridSearchCV(random_forest,r_forest_parameters,log_loss_scorer,verbose=2,n_jobs=-1)
+	r_forest_grid_obj = r_forest_grid_obj.fit(train_inp,train_target)
+	random_forest = r_forest_grid_obj.best_estimator_
+	print "Best params: " + str(r_forest_grid_obj.best_params_)	
+	random_forest_train_error = log_loss(train_target,random_forest.predict_proba(train_input))
+	random_forest_validation_error = log_loss(valid_target,random_forest.predict_proba(valid_input))
+	print "Best random forest training error: {:02.4f}".format(random_forest_train_error)
+	print "Best random forest validation error: {:02.4f}".format(random_forest_validation_error)
+	end = time.time()
+	print "RF grid search took {:02.4f} seconds".format(end-start)
+
+	return random_forest
+
+
 def visualizations(events_df):
 
 	plt.subplots(1)
