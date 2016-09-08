@@ -14,18 +14,24 @@ from scipy.sparse import hstack
 from sklearn.metrics import log_loss
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import make_scorer
+from sklearn.externals import joblib
 
 import time
 
 d = defaultdict(LabelEncoder)
 
+rf_filename = "RF/rf_50.pkl"
+ohe_filename = "encoder/ohe.pkl"
 
 
-def load_data():
+
+def load_data(train_or_test="train"):
+	if train_or_test != "train":
+		train_or_test = "test"
 
 
 	people_fname = "Data/people.csv"
-	event_fname = "Data/act_train.csv"
+	event_fname = "Data/act_{}.csv".format(train_or_test)
 
 
 	people_df = pd.read_csv(people_fname,parse_dates=["date"])
@@ -57,7 +63,10 @@ def input_target_split(events_df):
 
 
 
-def convert_to_one_hot(inp):
+def convert_to_one_hot(inp,train_or_test="train"):
+
+	if train_or_test != "train":
+		train_or_test = "test"
 
 	if "people_id" in inp.columns:
 		inp.drop(["people_id","activity_id","date","p_date"],axis=1,inplace=True)
@@ -76,9 +85,14 @@ def convert_to_one_hot(inp):
 	#while saving the transforms that did the work for use on the validation/test sets
 	cat_inp = cat_inp.apply(lambda x: d[x.name].fit_transform(x))
 
-	
-	enc = OneHotEncoder(handle_unknown="ignore")
-	enc.fit(cat_inp)
+	if train_or_test == "train":
+		enc = OneHotEncoder(handle_unknown="ignore")
+		enc.fit(cat_inp)
+		joblib.dump(enc,ohe_filename)
+	else:
+		enc = joblib.load(ohe_filename)
+
+
 	cat_inp = enc.transform(cat_inp)
 
 
@@ -89,11 +103,11 @@ def convert_to_one_hot(inp):
 
 
 
-def rf_fit(target,inp):
+def rf_fit():
 
-	train_inp,valid_inp,train_target,valid_target = train_test_split(inp,target,train_size=.8,random_state=31)
+	train_inp,valid_inp,train_target,valid_target = prepare_input()
 
-	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1)
+	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1,n_estimators=50)
 	start = time.time()
 
 	rf.fit(train_inp,train_target)
@@ -111,6 +125,12 @@ def rf_fit(target,inp):
 	print "Validation error: {:02.4f}".format(validation_error)
 
 
+	joblib.dump(rf,rf_filename)
+
+
+	return rf
+
+
 def prepare_input():
 	print "loading data"
 	events_df = load_data()
@@ -121,6 +141,22 @@ def prepare_input():
 	print "splitting training and validation"
 	train_inp,valid_inp,train_target,valid_target = train_test_split(inp,target,train_size=.8,random_state=31)
 	return train_inp,valid_inp,train_target,valid_target
+
+
+def prepare_submission():
+	print "loading data"
+	edf = load_data(train_or_test="test")
+	submission_df = edf[["activity_id"]]
+	print "converting to one hot"
+	inp = convert_to_one_hot(edf,train_or_test="test")
+	print "loading random forest"
+	rf = joblib.load(rf_filename)
+	print "making predictions"
+	predictions = pd.DataFrame(rf.predict_proba(inp),columns=[0,1],index=edf.index)
+	submission_df["outcome"] = predictions[1]
+	submission_df.to_csv("submission.csv",index=False)
+
+	
 
 
 
@@ -177,22 +213,24 @@ def rf_grid_search():
 	#and log-loss requires a probability
 	log_loss_scorer = make_scorer(log_loss,greater_is_better=False,needs_proba=True)
 
-	train_inp = train_inp[:750000]
-	train_target = train_target[:750000]
+	train_inp = train_inp[:1000000]
+	train_target = train_target[:100000]
 
 	start = time.time()
 	random_forest = RandomForestClassifier(random_state=31)
 	# r_forest_parameters = {'n_estimators' : [120,300,500,800,1200],'max_depth':[5,8,15,25,30,None],'max_features':['log2','sqrt',None],
 	# 'min_samples_split':[1,2,5,10,15,100],'min_samples_leaf':[1,2,5,10]}
 	
-	r_forest_parameters = {'n_estimators':[5,10,20,50],'max_depth':[3,5,15,25,30,None]}
+	#75.1 minutes to run with these paramters - 72 fits
+
+	r_forest_parameters = {'n_estimators':[50,75,100],'max_features':['log2','sqrt',None]}
 	#grid search too slow to not use all cores, and wayyyy too slow to have no output.
 	r_forest_grid_obj = GridSearchCV(random_forest,r_forest_parameters,log_loss_scorer,verbose=2,n_jobs=-1)
 	r_forest_grid_obj = r_forest_grid_obj.fit(train_inp,train_target)
 	random_forest = r_forest_grid_obj.best_estimator_
 	print "Best params: " + str(r_forest_grid_obj.best_params_)	
-	random_forest_train_error = log_loss(train_target,random_forest.predict_proba(train_input))
-	random_forest_validation_error = log_loss(valid_target,random_forest.predict_proba(valid_input))
+	random_forest_train_error = log_loss(train_target,random_forest.predict_proba(train_inp))
+	random_forest_validation_error = log_loss(valid_target,random_forest.predict_proba(valid_inp))
 	print "Best random forest training error: {:02.4f}".format(random_forest_train_error)
 	print "Best random forest validation error: {:02.4f}".format(random_forest_validation_error)
 	end = time.time()
