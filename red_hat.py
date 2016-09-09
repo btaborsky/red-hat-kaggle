@@ -15,6 +15,8 @@ from sklearn.metrics import log_loss
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import make_scorer
 from sklearn.externals import joblib
+from sklearn.svm import SVC
+
 
 import time
 
@@ -107,7 +109,7 @@ def rf_fit():
 
 	train_inp,valid_inp,train_target,valid_target = prepare_input()
 
-	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1,n_estimators=50)
+	rf = RandomForestClassifier(random_state=31,n_jobs=-1,verbose=1,n_estimators=100,min_samples_split=5)
 	start = time.time()
 
 	rf.fit(train_inp,train_target)
@@ -164,20 +166,12 @@ def rf_training_curve():
 	
 	train_inp,valid_inp,train_target,valid_target = prepare_input()
 
-
 	rf = RandomForestClassifier(random_state=31,n_jobs=-1)
 	
-	
-
 	generate_learning_curve(rf,train_inp,train_target,valid_inp,valid_target,1500000)
-
-	
-
 
 
 def generate_learning_curve(model,training_input,training_target,validation_input,validation_target,max_n):
-
-	
 
 	#proceed by thousands, total number of games in training set is between 12 and 13k
 	training_sizes = range(max_n/10,max_n,max_n/10)
@@ -213,7 +207,7 @@ def rf_grid_search():
 	#and log-loss requires a probability
 	log_loss_scorer = make_scorer(log_loss,greater_is_better=False,needs_proba=True)
 
-	train_inp = train_inp[:1000000]
+	train_inp = train_inp[:100000]
 	train_target = train_target[:100000]
 
 	start = time.time()
@@ -223,7 +217,7 @@ def rf_grid_search():
 	
 	#75.1 minutes to run with these paramters - 72 fits
 
-	r_forest_parameters = {'n_estimators':[50,75,100],'max_features':['log2','sqrt',None]}
+	r_forest_parameters = {'min_samples_split':[2,5,10,20,50,100],'min_samples_leaf':[1,2,5,10,50,100]}
 	#grid search too slow to not use all cores, and wayyyy too slow to have no output.
 	r_forest_grid_obj = GridSearchCV(random_forest,r_forest_parameters,log_loss_scorer,verbose=2,n_jobs=-1)
 	r_forest_grid_obj = r_forest_grid_obj.fit(train_inp,train_target)
@@ -238,6 +232,39 @@ def rf_grid_search():
 
 	return random_forest
 
+
+def svm_grid_search():
+
+	#get data
+	training_input,training_target,validation_input,validation_target = prepare_input()
+
+	#reshape target so it will play nice in grid search
+	training_target = pd.Series(training_target.values.transpose().tolist()[0])
+	#set up scorer for grid search. log-loss is error, not score, so set greater_is_better to false,
+	#and log-loss requires a probability
+	log_loss_scorer = make_scorer(log_loss,greater_is_better=False,needs_proba=True)
+
+	training_input = training_input[:100000]
+	training_target = training_target[:100000]
+
+
+	start = time.time()
+	svm = SVC(random_state=31,probability=True)
+	
+	
+	svm_parameters = {'C':[.001,.01,.1,1,10,100],'kernel':["rbf","sigmoid"]}
+	svm_grid_obj = GridSearchCV(svm,svm_parameters,log_loss_scorer,verbose=2,n_jobs=-1)
+	svm_grid_obj = svm_grid_obj.fit(training_input,training_target)
+	svm = svm_grid_obj.best_estimator_
+	print "Best params: " + str(svm_grid_obj.best_params_)	
+	svm_train_error = log_loss(training_target,svm.predict_proba(training_input))
+	svm_validation_error = log_loss(validation_target,svm.predict_proba(validation_input))
+	print "Best SVM training error: {:02.4f}".format(svm_train_error)
+	print "Best SVM validation error: {:02.4f}".format(svm_validation_error)
+	end = time.time()
+	print "RF grid search took {:02.4f} seconds".format(end-start)
+
+	return svm
 
 def visualizations(events_df):
 
