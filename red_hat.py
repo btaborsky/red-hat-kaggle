@@ -16,6 +16,8 @@ from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import make_scorer
 from sklearn.externals import joblib
 from sklearn.svm import SVC
+import xgboost as xgb
+
 
 
 import time
@@ -101,6 +103,34 @@ def convert_to_one_hot(inp,train_or_test="train"):
 	inp = hstack([inp,cat_inp])	
 
 	return inp
+
+
+def xgb_fit():
+
+	train_inp,valid_inp,train_target,valid_target = prepare_input()
+
+	dtrain = xgb.DMatrix(train_inp,label=train_target)
+	dvalid = xgb.DMatrix(valid_inp)
+
+
+	param = {'max_depth':10, 'eta':0.02, 'silent':1, 'objective':'binary:logistic' }
+	param['nthread'] = 4
+	param['eval_metric'] = 'auc'
+	param['subsample'] = 0.7
+	param['colsample_bytree']= 0.7
+	param['min_child_weight'] = 0
+	param['booster'] = "gblinear"
+
+	watchlist  = [(dtrain,'train')]
+	num_round = 300
+	early_stopping_rounds=10
+	bst = xgb.train(param, dtrain, num_round, watchlist,early_stopping_rounds=early_stopping_rounds)
+
+
+	train_pred = bst.predict(xgb.DMatrix(train_inp))
+	valid_pred = bst.predict(xgb.DMatrix(valid_inp))
+
+	return bst,train_pred,train_target,valid_pred,valid_target
 
 
 
@@ -238,8 +268,6 @@ def svm_grid_search():
 	#get data
 	training_input,training_target,validation_input,validation_target = prepare_input()
 
-	#reshape target so it will play nice in grid search
-	training_target = pd.Series(training_target.values.transpose().tolist()[0])
 	#set up scorer for grid search. log-loss is error, not score, so set greater_is_better to false,
 	#and log-loss requires a probability
 	log_loss_scorer = make_scorer(log_loss,greater_is_better=False,needs_proba=True)
@@ -247,6 +275,8 @@ def svm_grid_search():
 	training_input = training_input[:100000]
 	training_target = training_target[:100000]
 
+	print training_input.shape[0]
+	print training_target.shape[0]
 
 	start = time.time()
 	svm = SVC(random_state=31,probability=True)
