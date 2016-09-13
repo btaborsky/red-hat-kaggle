@@ -25,9 +25,10 @@ import time
 d = defaultdict(LabelEncoder)
 
 rf_filename = "RF/rf_50.pkl"
+bst_filename="BST/bst.pkl"
+
+
 ohe_filename = "encoder/ohe.pkl"
-
-
 
 def load_data(train_or_test="train"):
 	if train_or_test != "train":
@@ -126,11 +127,13 @@ def xgb_fit():
 	early_stopping_rounds=10
 	bst = xgb.train(param, dtrain, num_round, watchlist,early_stopping_rounds=early_stopping_rounds)
 
+	joblib.dump(bst,bst_filename)
+
 
 	train_pred = bst.predict(xgb.DMatrix(train_inp))
 	valid_pred = bst.predict(xgb.DMatrix(valid_inp))
 
-	return bst,train_pred,train_target,valid_pred,valid_target
+	
 
 
 
@@ -175,16 +178,25 @@ def prepare_input():
 	return train_inp,valid_inp,train_target,valid_target
 
 
-def prepare_submission():
+def prepare_submission(model_type="bst"):
 	print "loading data"
 	edf = load_data(train_or_test="test")
 	submission_df = edf[["activity_id"]]
 	print "converting to one hot"
 	inp = convert_to_one_hot(edf,train_or_test="test")
-	print "loading random forest"
-	rf = joblib.load(rf_filename)
-	print "making predictions"
-	predictions = pd.DataFrame(rf.predict_proba(inp),columns=[0,1],index=edf.index)
+	print inp.shape[0]
+
+	print "loading model"
+	if model_type=="rf":
+		model = joblib.load(rf_filename)
+		print "making predictions"
+		predictions = pd.DataFrame(model.predict_proba(inp),columns=[0,1],index=edf.index)
+	else:
+		model = joblib.load(bst_filename)
+		print "making predictions"
+		predictions = pd.DataFrame(model.predict(xgb.DMatrix(inp)),columns=[1],index=edf.index)
+	
+	
 	submission_df["outcome"] = predictions[1]
 	submission_df.to_csv("submission.csv",index=False)
 
